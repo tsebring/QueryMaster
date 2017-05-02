@@ -42,7 +42,7 @@ namespace QueryMaster.GameServer
         private byte[] EmptyPkt = new byte[] { 0x0a, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
         private ConnectionInfo _conInfo;
-        private object _lock = new object();
+        private SemaphoreSlim _ss = new SemaphoreSlim(1, 1);
         private Task _procTask;
         private delegate void OnPacketEventHandler(byte[] data);
         private event OnPacketEventHandler OnPacket;
@@ -129,7 +129,7 @@ namespace QueryMaster.GameServer
 
             try
             {
-                Monitor.Enter(_lock);
+                await _ss.WaitAsync();
                 OnPacket += handler;
                 SendData(RconUtil.GetBytes(senPacket));
                 if (await Task.WhenAny(tcs.Task, Task.Delay(_conInfo.ReceiveTimeout)) == tcs.Task)
@@ -141,7 +141,7 @@ namespace QueryMaster.GameServer
             finally
             {
                 OnPacket -= handler;
-                Monitor.Exit(_lock);
+                _ss.Release();
             }
         }
 
@@ -152,6 +152,7 @@ namespace QueryMaster.GameServer
                 if (disposing)
                 {
                     _procTask?.Dispose();
+                    _ss?.Dispose();
                 }
             }
 
