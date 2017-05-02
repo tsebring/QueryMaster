@@ -47,7 +47,7 @@ namespace QueryMaster.GameServer
             byte[] recvData;
             SendData(msg);
             recvData = ReceiveData();//Response value packet
-            recvData = ReceiveData();//Auth response packet
+            //recvData = ReceiveData();//Auth response packet
 
             return recvData;
         }
@@ -58,19 +58,17 @@ namespace QueryMaster.GameServer
             bool isRemaining = true;
             byte[] recvData;
             SendData(msg);
-            SendData(EmptyPkt);//Empty packet
+            //SendData(EmptyPkt);//Empty packet
             recvData = ReceiveData();//reply
             recvBytes.Add(recvData);
-
-            do
-            {
-                recvData = ReceiveData();//may or may not be an empty packet
-                if (BitConverter.ToInt32(recvData, 4) == (int)PacketId.Empty)
-                    isRemaining = false;
-                else
-                    recvBytes.Add(recvData);
-            } while (isRemaining);
-
+            //do
+            //{
+            //    recvData = ReceiveData();//may or may not be an empty packet
+            //    if (BitConverter.ToInt32(recvData, 4) == (int)PacketId.Empty)
+            //        isRemaining = false;
+            //    else
+            //        recvBytes.Add(recvData);
+            //} while (isRemaining);
             return recvBytes;
         }
     }
