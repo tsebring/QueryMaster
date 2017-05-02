@@ -82,7 +82,7 @@ namespace QueryMaster.GameServer
                     }
                 }
             }
-            catch (OperationCanceledException) { }
+            catch (Exception) { }
         }
 
         internal byte[] GetResponse(byte[] msg)
@@ -151,7 +151,6 @@ namespace QueryMaster.GameServer
             {
                 if (disposing)
                 {
-                    _procTask?.Dispose();
                     _ss?.Dispose();
                 }
             }
