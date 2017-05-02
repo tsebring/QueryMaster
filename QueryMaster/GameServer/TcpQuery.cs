@@ -32,6 +32,8 @@ using System.Text;
 using System.Net;
 using QueryMaster;
 using System.Net.Sockets;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace QueryMaster.GameServer
 {
@@ -39,8 +41,49 @@ namespace QueryMaster.GameServer
     {
         private byte[] EmptyPkt = new byte[] { 0x0a, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
+        private ConnectionInfo _conInfo;
+        private object _lock = new object();
+        private Task _procTask;
+        private delegate void OnPacketEventHandler(byte[] data);
+        private event OnPacketEventHandler OnPacket;
+        
+
         internal TcpQuery(ConnectionInfo conInfo)
-            : base(conInfo, ProtocolType.Tcp) { }
+            : base(conInfo, ProtocolType.Tcp)
+        {
+            _conInfo = conInfo;
+        }
+
+        internal void Init()
+        {
+            Socket.ReceiveTimeout = 0;
+            _procTask = Task.Run(() => _proc_callback());
+        }
+
+        private void _proc_callback()
+        {
+            try
+            {
+                var buffer = new List<byte>();
+                byte[] recvData = new byte[BufferSize];
+                int size = 0;
+                while (true)
+                {
+                    var count = Socket.Receive(recvData);
+                    if (count > 0)
+                    {
+                        buffer.AddRange(recvData.Take(count));
+                        while (RconUtil.IsPacket(buffer.ToArray(), out size))
+                        {
+                            var packet = buffer.Take(size).ToArray();
+                            OnPacket?.Invoke(packet);
+                            buffer.RemoveRange(0, size);
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+        }
 
         internal byte[] GetResponse(byte[] msg)
         {
@@ -70,6 +113,49 @@ namespace QueryMaster.GameServer
             //        recvBytes.Add(recvData);
             //} while (isRemaining);
             return recvBytes;
+        }
+
+        internal async Task<RconSrcPacket> GetResponseAsync(RconSrcPacket senPacket)
+        {
+            var tcs = new TaskCompletionSource<RconSrcPacket>();
+            var handler = new OnPacketEventHandler((data) =>
+            {
+                var packet = RconUtil.ProcessPacket(data);
+                if (packet.Id == senPacket.Id)
+                {
+                    tcs.SetResult(packet);
+                }
+            });
+
+            try
+            {
+                Monitor.Enter(_lock);
+                OnPacket += handler;
+                SendData(RconUtil.GetBytes(senPacket));
+                if (await Task.WhenAny(tcs.Task, Task.Delay(_conInfo.ReceiveTimeout)) == tcs.Task)
+                {
+                    return tcs.Task.Result;
+                }
+                else return null;
+            }
+            finally
+            {
+                OnPacket -= handler;
+                Monitor.Exit(_lock);
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (!IsDisposed)
+            {
+                if (disposing)
+                {
+                    _procTask?.Dispose();
+                }
+            }
+
+            base.Dispose(disposing);
         }
     }
 }

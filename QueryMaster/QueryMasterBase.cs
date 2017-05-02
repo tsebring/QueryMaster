@@ -31,6 +31,7 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace QueryMaster
 {
@@ -86,10 +87,37 @@ namespace QueryMaster
             }
        }
 
-       /// <summary>
-       /// Disposes all the resources used by this instance.
-       /// </summary>
-       public void Dispose()
+        internal async Task<T> InvokeAsync<T>(Func<Task<T>> method, int attempts, AttemptCallback attemptcallback, bool throwExceptions) where T : class
+        {
+            int AttemptCounter = 0;
+            while (true)
+            {
+                try
+                {
+                    AttemptCounter++;
+                    if (attemptcallback != null)
+                    {
+                        ThreadPool.QueueUserWorkItem(x => attemptcallback(AttemptCounter));
+                    }
+                    T reply = await method();
+                    return reply;
+                }
+                catch (Exception)
+                {
+                    if (AttemptCounter >= attempts)
+                        if (throwExceptions)
+                            throw;
+                        else
+                            return null;
+                }
+
+            }
+        }
+
+        /// <summary>
+        /// Disposes all the resources used by this instance.
+        /// </summary>
+        public void Dispose()
        {
            if (IsDisposed)
                return;

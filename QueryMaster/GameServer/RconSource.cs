@@ -30,6 +30,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Net;
+using System.Threading.Tasks;
 using QueryMaster;
 namespace QueryMaster.GameServer
 {
@@ -65,6 +66,7 @@ namespace QueryMaster.GameServer
                     }
                     if (header != -1)
                     {
+                        obj.socket.Init();
                         return obj;
                     }
                     return obj;
@@ -73,12 +75,16 @@ namespace QueryMaster.GameServer
 
         public override string SendCommand(string command,bool isMultipacketResponse=false)
         {
+            throw new NotSupportedException("Method is deprecated");
+
             ThrowIfDisposed();
             return Invoke<string>(() => sendCommand(command, isMultipacketResponse), 1, null, ConInfo.ThrowExceptions);
         }
 
         private string sendCommand(string command,bool isMultipacketResponse)
         {
+            throw new NotSupportedException("Method is deprecated");
+
             RconSrcPacket senPacket = new RconSrcPacket() { Body = command, Id = (int)PacketId.ExecCmd, Type = (int)PacketType.Exec };
             List<byte[]> recvData = socket.GetMultiPacketResponse(RconUtil.GetBytes(senPacket));
             StringBuilder str = new StringBuilder();
@@ -107,14 +113,32 @@ namespace QueryMaster.GameServer
             return str.ToString();
         }
 
+        public override async Task<string> SendCommandAsync(string command)
+        {
+            ThrowIfDisposed();
+            return await InvokeAsync<string>(async () => await sendCommandAsync(command), 1, null, ConInfo.ThrowExceptions);
+        }
+
+        private async Task<string> sendCommandAsync(string command)
+        {
+            var senPacket = new RconSrcPacket() { Body = command, Id = (int)PacketId.ExecCmd, Type = (int)PacketType.Exec };
+            var recvPacket = await socket.GetResponseAsync(senPacket);
+
+            return recvPacket?.Body;
+        }
+
         public override void AddlogAddress(string ip, ushort port)
         {
+            throw new NotSupportedException("Method is deprecated");
+
             ThrowIfDisposed();
             SendCommand("logaddress_add " + ip + ":" + port);
         }
 
         public override void RemovelogAddress(string ip, ushort port)
         {
+            throw new NotSupportedException("Method is deprecated");
+
             ThrowIfDisposed();
             SendCommand("logaddress_del " + ip + ":" + port);
         }

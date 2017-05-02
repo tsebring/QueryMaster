@@ -29,6 +29,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace QueryMaster.GameServer
 {
@@ -45,6 +46,7 @@ namespace QueryMaster.GameServer
             ThrowIfDisposed();
             SendCommand("log on");
         }
+
         /// <summary>
         /// Disable logging on server.
         /// </summary>
@@ -76,5 +78,11 @@ namespace QueryMaster.GameServer
         /// <param name="port">Port number of client.</param>
         public abstract void RemovelogAddress(string ip, ushort port);
 
+        /// <summary>
+        /// Send a Command to server.
+        /// </summary>
+        /// <param name="cmd">Server command.</param>
+        /// <returns>Reply from server in string format.</returns>
+        public abstract Task<string> SendCommandAsync(string cmd);
     }
 }

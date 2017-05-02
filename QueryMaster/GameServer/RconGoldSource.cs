@@ -31,6 +31,8 @@ using System.Linq;
 using System.Text;
 using System.Net;
 using QueryMaster;
+using System.Threading.Tasks;
+
 namespace QueryMaster.GameServer
 {
    internal class RconGoldSource : Rcon
@@ -90,6 +92,11 @@ namespace QueryMaster.GameServer
                 throw;
             }
             return s;
+        }
+
+        public override async Task<string> SendCommandAsync(string command)
+        {
+            throw new NotImplementedException();
         }
 
         private string GetChallengeId()

@@ -63,7 +63,7 @@ namespace QueryMaster.GameServer
                 if (body.Length == 2)
                     packet.Body = string.Empty;
                 else
-                    packet.Body = Util.BytesToString(body, 0, body.Length - 3);
+                    packet.Body = Util.BytesToString(body, 0, body.Length - 2);
             }
             catch (Exception e)
             {
@@ -71,6 +71,30 @@ namespace QueryMaster.GameServer
                 throw;
             }
             return packet;
+        }
+
+        internal static bool IsPacket(byte[] data, out int size)
+        {
+            size = 0;
+            try
+            {
+                if (data.Length < 14) return false;
+                Parser parser = new Parser(data);
+                var datasize = parser.ReadInt();
+                var id = parser.ReadInt();
+                var type = parser.ReadInt();
+                byte[] body = parser.GetUnParsedBytes();
+                var nil1 = datasize - 9;
+                var nil2 = datasize - 10;
+                if (body.Length <= nil2) return false;
+                if (body[nil1] != '\0' || body[nil2] != '\0') return false;
+
+                size = datasize + 4;
+                return true;
+            }
+            catch { }
+
+            return false;
         }
     }
 }
