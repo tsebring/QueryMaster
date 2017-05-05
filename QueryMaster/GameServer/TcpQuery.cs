@@ -137,7 +137,7 @@ namespace QueryMaster.GameServer
                 await _ss.WaitAsync();
                 OnPacket += handler;
                 SendData(RconUtil.GetBytes(senPacket));
-                if (await Task.WhenAny(tcs.Task, Task.Delay(ReceiveTimeout)) == tcs.Task)
+                if (await Task.WhenAny(tcs.Task, Task.Delay(_conInfo.ReceiveTimeout)) == tcs.Task)
                 {
                     return tcs.Task.Result;
                 }
