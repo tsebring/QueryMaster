@@ -56,11 +56,11 @@ namespace QueryMaster.GameServer
 
         internal void Init()
         {
-            Socket.ReceiveTimeout = 0;
+            ReceiveTimeout = 0;
             _procTask = Task.Run(() => _proc_callback());
         }
 
-        private void _proc_callback()
+        private async void _proc_callback()
         {
             try
             {
@@ -69,7 +69,7 @@ namespace QueryMaster.GameServer
                 int size = 0;
                 while (true)
                 {
-                    var count = Socket.Receive(recvData);
+                    var count = Receive(recvData);
                     if (count > 0)
                     {
                         buffer.AddRange(recvData.Take(count));
@@ -79,6 +79,11 @@ namespace QueryMaster.GameServer
                             OnPacket?.Invoke(packet);
                             buffer.RemoveRange(0, size);
                         }
+                    }
+                    else
+                    {
+                        //socket was shutdown by the remote host and reconnect failed
+                        await Task.Delay(100);
                     }
                 }
             }
@@ -132,7 +137,7 @@ namespace QueryMaster.GameServer
                 await _ss.WaitAsync();
                 OnPacket += handler;
                 SendData(RconUtil.GetBytes(senPacket));
-                if (await Task.WhenAny(tcs.Task, Task.Delay(_conInfo.ReceiveTimeout)) == tcs.Task)
+                if (await Task.WhenAny(tcs.Task, Task.Delay(ReceiveTimeout)) == tcs.Task)
                 {
                     return tcs.Task.Result;
                 }

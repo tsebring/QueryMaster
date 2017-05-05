@@ -31,6 +31,7 @@ using System.Linq;
 using System.Text;
 using System.Net.Sockets;
 using System.Net;
+using System.Diagnostics;
 
 namespace QueryMaster.GameServer
 {
@@ -43,6 +44,22 @@ namespace QueryMaster.GameServer
         internal EngineType EngineType { get; set; }
         internal Socket Socket { set; get; }
         private readonly object LockObj = new object();
+
+        internal int ReceiveTimeout
+        {
+            get
+            {
+                return _receiveTimeout;
+            }
+
+            set
+            {
+                _receiveTimeout = value;
+                if (Socket != null) Socket.ReceiveTimeout = value;
+            }
+        }
+        private int _receiveTimeout = 0;
+
         internal ServerSocket(ConnectionInfo conInfo,ProtocolType  type)
         {
             switch (type)
@@ -59,13 +76,20 @@ namespace QueryMaster.GameServer
             }
 
             Socket.SendTimeout = conInfo.SendTimeout;
-            Socket.ReceiveTimeout = conInfo.ReceiveTimeout;
+            ReceiveTimeout = conInfo.ReceiveTimeout;
             Address = conInfo.EndPoint;
-            IAsyncResult result = Socket.BeginConnect(Address, null, null);
-            bool success = result.AsyncWaitHandle.WaitOne(conInfo.ReceiveTimeout, true);
+            var success = Reconnect();
             if (!success)
                 throw new SocketException((int)SocketError.TimedOut);
             IsDisposed = false;
+        }
+
+        internal bool Reconnect()
+        {
+            IAsyncResult result = Socket.BeginConnect(Address, null, null);
+            bool success = result.AsyncWaitHandle.WaitOne(ReceiveTimeout, true);
+
+            return success;
         }
 
         internal int SendData(byte[] data)
@@ -73,6 +97,21 @@ namespace QueryMaster.GameServer
             ThrowIfDisposed();
             lock(LockObj)
                 return Socket.Send(data);
+        }
+
+        internal int Receive(byte[] buffer)
+        {
+            ThrowIfDisposed();
+            var count = Socket.Receive(buffer);
+            if (count == 0)
+            {
+                //if reconnection does not work it could be because new authorization is required.
+                Debug.WriteLine("Socket.Receive returned 0, attempting to reconnect...");
+                var success = Reconnect();
+                if (success) count = Socket.Receive(buffer);
+            }
+
+            return count;
         }
 
         internal byte[] ReceiveData()
