@@ -43,7 +43,7 @@ namespace QueryMaster.GameServer
         {
             ThrowIfDisposed();
             bool isSuccess = false;
-            Rcon = RconSource.Authorize(ConInfo, pass);
+            Rcon = RconSource.CreateRconConnection(ConInfo, pass);
             if (Rcon != null)
                 isSuccess = true;
             return isSuccess;

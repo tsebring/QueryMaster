@@ -44,7 +44,7 @@ namespace QueryMaster.GameServer
         private ConnectionInfo _conInfo;
         private SemaphoreSlim _ss = new SemaphoreSlim(1, 1);
         private Task _procTask;
-        private delegate void OnPacketEventHandler(byte[] data);
+        private delegate void OnPacketEventHandler(byte[] data, Exception ex);
         private event OnPacketEventHandler OnPacket;
         
 
@@ -60,7 +60,7 @@ namespace QueryMaster.GameServer
             _procTask = Task.Run(() => _proc_callback());
         }
 
-        private async void _proc_callback()
+        private void _proc_callback()
         {
             try
             {
@@ -69,21 +69,33 @@ namespace QueryMaster.GameServer
                 int size = 0;
                 while (true)
                 {
-                    var count = Receive(recvData);
+                    int count = 0;
+                    Exception lastException = null;
+                    try
+                    {
+                        count = Receive(recvData);
+                    } catch(Exception ex) { lastException = ex; }
+
+                    if (lastException != null)
+                    {
+                        OnPacket?.Invoke(null, new QueryMasterException("Receive failed", lastException));
+                        break;
+                    }
+
                     if (count > 0)
                     {
                         buffer.AddRange(recvData.Take(count));
                         while (RconUtil.IsPacket(buffer.ToArray(), out size))
                         {
                             var packet = buffer.Take(size).ToArray();
-                            OnPacket?.Invoke(packet);
+                            OnPacket?.Invoke(packet, null);
                             buffer.RemoveRange(0, size);
                         }
                     }
                     else
                     {
-                        //socket was shutdown by the remote host and reconnect failed
-                        await Task.Delay(100);
+                        OnPacket?.Invoke(null, new QueryMasterException("Receive failed because socket was shutdown by remote host"));
+                        break;
                     }
                 }
             }
@@ -100,43 +112,36 @@ namespace QueryMaster.GameServer
             return recvData;
         }
 
-        internal List<byte[]> GetMultiPacketResponse(byte[] msg)
-        {
-            List<byte[]> recvBytes = new List<byte[]>();
-            bool isRemaining = true;
-            byte[] recvData;
-            SendData(msg);
-            //SendData(EmptyPkt);//Empty packet
-            recvData = ReceiveData();//reply
-            recvBytes.Add(recvData);
-            //do
-            //{
-            //    recvData = ReceiveData();//may or may not be an empty packet
-            //    if (BitConverter.ToInt32(recvData, 4) == (int)PacketId.Empty)
-            //        isRemaining = false;
-            //    else
-            //        recvBytes.Add(recvData);
-            //} while (isRemaining);
-            return recvBytes;
-        }
-
         internal async Task<RconSrcPacket> GetResponseAsync(RconSrcPacket senPacket)
         {
+            if (_procTask == null) throw new QueryMasterException($"{nameof(TcpQuery)} must be initialized before calling {nameof(GetResponseAsync)}");
+            if (_procTask.IsCompleted) throw new QueryMasterException("Receive thread is in a failed state");
+
             var tcs = new TaskCompletionSource<RconSrcPacket>();
-            var handler = new OnPacketEventHandler((data) =>
+            var handler = new OnPacketEventHandler((data, exception) =>
             {
-                var packet = RconUtil.ProcessPacket(data);
-                if (packet.Id == senPacket.Id)
+                if (data != null)
                 {
-                    tcs.SetResult(packet);
+                    var packet = RconUtil.ProcessPacket(data);
+                    if (packet.Id == senPacket.Id)
+                    {
+                        tcs.SetResult(packet);
+                    }
                 }
+
+                if (exception != null) tcs.SetException(exception);
             });
 
             try
             {
                 await _ss.WaitAsync();
                 OnPacket += handler;
-                SendData(RconUtil.GetBytes(senPacket));
+                try
+                {
+                    SendData(RconUtil.GetBytes(senPacket));
+                }
+                catch (Exception ex) { throw new QueryMasterException("Failed to send packet", ex); }
+
                 if (await Task.WhenAny(tcs.Task, Task.Delay(_conInfo.ReceiveTimeout)) == tcs.Task)
                 {
                     return tcs.Task.Result;
@@ -157,6 +162,9 @@ namespace QueryMaster.GameServer
                 if (disposing)
                 {
                     _ss?.Dispose();
+                    _ss = null;
+                    _procTask?.Dispose();
+                    _procTask = null;
                 }
             }
 

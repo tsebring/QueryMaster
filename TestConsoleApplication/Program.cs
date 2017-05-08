@@ -20,8 +20,9 @@ namespace TestConsoleApplication
 
             static async Task MainAsync()
         {
+            var rnd = new Random();
             Server server = null;
-            
+
             using (server = ServerQuery.GetServerInstance(QueryMaster.EngineType.Source, "127.0.0.1", 27015, false, 1000, 1000, 1, false))
             {
                 var serverInfo = server.GetInfo();
@@ -31,23 +32,25 @@ namespace TestConsoleApplication
 
             try
             {
-                server = ServerQuery.GetServerInstance(QueryMaster.EngineType.Source, new IPEndPoint(IPAddress.Parse("127.0.0.1"), 27020), false, 1000, 10000, 1, false);
+                server = ServerQuery.GetServerInstance(QueryMaster.EngineType.Source, new IPEndPoint(IPAddress.Parse("127.0.0.1"), 27020), false, 3000, 10000, 1, true);
                 server.GetControl("password");
 
                 while (!Console.KeyAvailable)
                 {
+                    var nextDelay = rnd.Next(60, 60 * 30) * 1000;
+                    var st = Stopwatch.StartNew();
                     try
                     {
-                        var st = Stopwatch.StartNew();
-                        var result = await server.Rcon.SendCommandAsync("serverchat test");
-                        st.Stop();
-                        Debug.WriteLine($"{DateTime.Now:HH:mm:ss.ffff}: Command sent and returned {result ?? "[null]"} (elapsed {st.ElapsedMilliseconds:N0} ms)");
+                        
+                        var result = await server.Rcon.SendCommandAsync("listplayers");
+                        if (result != null) Console.WriteLine($"{DateTime.Now:HH:mm:ss.ffff}: Command sent and returned {result.Trim(' ', '\n', '\r')} (elapsed {st.ElapsedMilliseconds:N0} ms) [next in {TimeSpan.FromMilliseconds(nextDelay)}]");
+                        else Console.WriteLine($"{DateTime.Now:HH:mm:ss.ffff}: Command sent and failed with result \"[null]\" (elapsed {st.ElapsedMilliseconds:N0} ms) [next in {TimeSpan.FromMilliseconds(nextDelay)}]");
                     }
-                    catch (ArgumentOutOfRangeException ex)
+                    catch (Exception ex)
                     {
-                        throw;
+                        Console.WriteLine($"{DateTime.Now:HH:mm:ss.ffff}: Command sent and failed with exception {ex.ToString()} (elapsed {st.ElapsedMilliseconds:N0} ms) [next in {TimeSpan.FromMilliseconds(nextDelay)}]");
                     }
-                    await Task.Delay(60000);
+                    await Task.Delay(nextDelay);
                 }
             }
             finally

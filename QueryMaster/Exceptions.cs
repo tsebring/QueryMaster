@@ -112,7 +112,4 @@ namespace QueryMaster
         public SteamException(string message, Exception innerException) : base(message, innerException) { }
         protected SteamException(SerializationInfo info, StreamingContext context) : base(info, context) { }
     }
-
-
-
 }

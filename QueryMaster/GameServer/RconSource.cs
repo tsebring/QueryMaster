@@ -36,97 +36,88 @@ namespace QueryMaster.GameServer
 {
     class RconSource : Rcon
     {
-        internal TcpQuery socket;
-        private ConnectionInfo ConInfo;
+        private TcpQuery _socket;
+        private ConnectionInfo _connInfo;
+        private string _password;
 
-        private RconSource(ConnectionInfo conInfo)
+        private RconSource(ConnectionInfo conInfo, string password)
         {
-            ConInfo = conInfo;
+            _connInfo = conInfo;
+            _password = password;
         }
 
-        internal static Rcon Authorize(ConnectionInfo conInfo, string msg)
+        internal static Rcon CreateRconConnection(ConnectionInfo conInfo, string msg)
         {
-
             return new QueryMasterBase().Invoke<Rcon>(() =>
                 {
-                    RconSource obj = new RconSource(conInfo);
-                    obj.socket = new TcpQuery(conInfo);
-                    byte[] recvData = new byte[50];
-                    RconSrcPacket packet = new RconSrcPacket() { Body = msg, Id = (int)PacketId.ExecCmd, Type = (int)PacketType.Auth };
-                    recvData = obj.socket.GetResponse(RconUtil.GetBytes(packet));
-                    int header;
+                    RconSource rcon = null;
                     try
                     {
-                        header = BitConverter.ToInt32(recvData, 4);
+                        rcon = new RconSource(conInfo, msg);
+                        if (!rcon.Reconnect()) throw new QueryMasterException("Failed to connect");
+
+                        return rcon;
                     }
-                    catch (Exception e)
+                    catch (Exception ex)
                     {
-                        e.Data.Add("ReceivedData", recvData == null ? new byte[1] : recvData);
+                        rcon?.Dispose();
+                        rcon = null;
                         throw;
                     }
-                    if (header != -1)
-                    {
-                        obj.socket.Init();
-                        return obj;
-                    }
-                    return obj;
                 }, conInfo.Retries + 1, null, conInfo.ThrowExceptions);
         }
 
-        public override string SendCommand(string command,bool isMultipacketResponse=false)
+        private bool Reconnect()
         {
-            throw new NotSupportedException("Method is deprecated");
-
-            ThrowIfDisposed();
-            return Invoke<string>(() => sendCommand(command, isMultipacketResponse), 1, null, ConInfo.ThrowExceptions);
-        }
-
-        private string sendCommand(string command,bool isMultipacketResponse)
-        {
-            throw new NotSupportedException("Method is deprecated");
-
-            RconSrcPacket senPacket = new RconSrcPacket() { Body = command, Id = (int)PacketId.ExecCmd, Type = (int)PacketType.Exec };
-            List<byte[]> recvData = socket.GetMultiPacketResponse(RconUtil.GetBytes(senPacket));
-            StringBuilder str = new StringBuilder();
-            try
+            if (_socket != null)
             {
-                for (int i = 0; i < recvData.Count; i++)
+                try
                 {
-                    //consecutive rcon command replies start with an empty packet 
-                    if (BitConverter.ToInt32(recvData[i], 4) == (int)PacketId.Empty)
-                        continue;
-                    if (recvData[i].Length - BitConverter.ToInt32(recvData[i], 0) == 4)
-                    {
-                        str.Append(RconUtil.ProcessPacket(recvData[i]).Body);
-                    }
-                    else
-                    {
-                        str.Append(RconUtil.ProcessPacket(recvData[i]).Body + Util.BytesToString(recvData[++i].Take(recvData[i].Length - 2).ToArray()));
-                    }
+                    _socket.Dispose();
+                    _socket = null;
                 }
+                catch { }
             }
-            catch (Exception e)
-            {
-                e.Data.Add("ReceivedData", recvData.SelectMany(x => x).ToArray());
-                throw;
-            }
-            return str.ToString();
+
+            _socket = new TcpQuery(_connInfo);
+
+            //attempt to authorize this conenction
+            var packet = new RconSrcPacket() { Body = _password, Id = (int)PacketId.ExecCmd, Type = (int)PacketType.Auth };
+            var buffer = _socket.GetResponse(RconUtil.GetBytes(packet));
+
+            if (buffer == null || buffer.Length < 4) return false;
+
+            var header = BitConverter.ToInt32(buffer, 4);
+            if (header == -1) return false;
+
+            _socket.Init();
+            return true;
         }
 
         public override async Task<string> SendCommandAsync(string command)
         {
             ThrowIfDisposed();
-            return await InvokeAsync<string>(async () => await sendCommandAsync(command), 1, null, ConInfo.ThrowExceptions);
+            return await InvokeAsync<string>(async () => await sendCommandAsync(command), 1, null, _connInfo.ThrowExceptions);
         }
 
         private async Task<string> sendCommandAsync(string command)
         {
-            var senPacket = new RconSrcPacket() { Body = command, Id = (int)PacketId.ExecCmd, Type = (int)PacketType.Exec };
-            var recvPacket = await socket.GetResponseAsync(senPacket);
+            var send = new RconSrcPacket() { Body = command, Id = (int)PacketId.ExecCmd, Type = (int)PacketType.Exec };
+            Exception lastException = null;
+            try
+            {
+                var result = await _socket.GetResponseAsync(send);
+                return result?.Body;
+            }
+            catch (Exception ex) { lastException = ex; }
 
-            return recvPacket?.Body;
+            if (!Reconnect()) throw new QueryMasterException("Send command and reconnect failed", lastException);
+
+            var resultSecond = await _socket.GetResponseAsync(send);
+            return resultSecond?.Body;
         }
 
+        #region Old Code
         public override void AddlogAddress(string ip, ushort port)
         {
             throw new NotSupportedException("Method is deprecated");
@@ -143,14 +134,25 @@ namespace QueryMaster.GameServer
             SendCommand("logaddress_del " + ip + ":" + port);
         }
 
+        public override string SendCommand(string command, bool isMultipacketResponse = false)
+        {
+            throw new NotSupportedException("Method is deprecated");
+        }
+
+        private string sendCommand(string command, bool isMultipacketResponse)
+        {
+            throw new NotSupportedException("Method is deprecated");
+        }
+        #endregion
+
         protected override void Dispose(bool disposing)
         {
             if (!IsDisposed)
             {
                 if (disposing)
                 {
-                    if (socket != null)
-                        socket.Dispose();
+                    _socket?.Dispose();
+                    _socket = null;
                 }
                 base.Dispose(disposing);
                 IsDisposed = true;
